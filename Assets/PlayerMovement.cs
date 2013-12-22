@@ -9,6 +9,7 @@ public class PlayerMovement : MonoBehaviour {
 	int cachedSteps = 0;
 	public bool DEBUG;
 	float width;
+	bool facingRight = true;
 
 	Vector3 physicsPosition;
 	Vector3 authorizedPosition;
@@ -56,18 +57,25 @@ public class PlayerMovement : MonoBehaviour {
 
 	}
 
+	void Turn(){
+		facingRight = !facingRight;
+		Vector3 localScale = transform.localScale;
+		localScale.x *= -1;
+		transform.localScale = localScale;
+	}
 	//In the future this function would handle collisions and gravity.
 	void StepPhysics(Vector3 axes, float deltaTime){
 		//This is the physics simulation part
-		float speed = 2.0f;
-		physicsPosition = physicsPosition + axes * speed * deltaTime;
+		float speed = 8.0f;
+		rigidbody2D.velocity = new Vector2(axes.x * speed, rigidbody2D.velocity.y);
+		//physicsPosition = physicsPosition + axes * speed * deltaTime;
 	}
 
 	// TODO: If we add more buttons, put them on queue to be sent on next frame
 	void FixedUpdate () {
 	 //We make sure the player associated with this object controls input
 		//serverCurrentAxes = ;
-		if (theOwner != null && Network.player.Equals(theOwner) && !DEBUG){
+		if (theOwner != null && Network.player.Equals(theOwner)){
 			Vector3 axes = new Vector3(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"), 0);
 			if(axes != lastClientAxes || cachedSteps >= 3){
 				lastClientAxes = axes;
@@ -81,13 +89,16 @@ public class PlayerMovement : MonoBehaviour {
 			}
 			//Client side prediction. The server player (if we keep it, maintains his own position as accurate)
 			StepPhysics(axes, Time.fixedDeltaTime);
-			transform.position = physicsPosition;
+			if(facingRight && axes.x < 0 || !facingRight && axes.x > 0)
+				Turn ();
+
+			//transform.position = physicsPosition;
 			physicsStep++;
 			cachedSteps++;
 		}
 
 		/* Smooth player movement for host's view*/
-		else if(Network.isServer && !DEBUG){ //server side smoothing
+		else if(Network.isServer){ //server side smoothing
 			Vector3 positionDifference = physicsPosition - transform.position;
 			float distanceApart = positionDifference.magnitude;
 			if(distanceApart < width/24.0f)
