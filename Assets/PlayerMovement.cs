@@ -49,8 +49,8 @@ public class PlayerMovement : MonoBehaviour {
 		if(inputPhysStep < physicsStep)
 			return;
 		//find how many physics steps were're behind and take that time into account
-		float deltaTime = (inputPhysStep - physicsStep) * Time.fixedDeltaTime;
-		StepPhysics(serverCurrentAxes, deltaTime);
+		float frames = inputPhysStep - physicsStep;
+		StepPhysics(serverCurrentAxes, frames);
 		physicsStep = inputPhysStep;
 		//Don't use simulate latest move because the client hasn't simulated it yet. Just keep a copy.
 		serverCurrentAxes = axes;
@@ -64,10 +64,10 @@ public class PlayerMovement : MonoBehaviour {
 		transform.localScale = localScale;
 	}
 	//In the future this function would handle collisions and gravity.
-	void StepPhysics(Vector3 axes, float deltaTime){
+	void StepPhysics(Vector3 axes, float frames){
 		//This is the physics simulation part
-		float speed = 8.0f;
-		rigidbody2D.velocity = new Vector2(axes.x * speed, rigidbody2D.velocity.y);
+		float speed = 6.0f; //6 units per second
+		rigidbody2D.velocity = new Vector2(axes.x * speed * frames, rigidbody2D.velocity.y);
 		//physicsPosition = physicsPosition + axes * speed * deltaTime;
 	}
 
@@ -88,7 +88,7 @@ public class PlayerMovement : MonoBehaviour {
 				cachedSteps = 0;
 			}
 			//Client side prediction. The server player (if we keep it, maintains his own position as accurate)
-			StepPhysics(axes, Time.fixedDeltaTime);
+			StepPhysics(axes, 1.0f);
 			if(facingRight && axes.x < 0 || !facingRight && axes.x > 0)
 				Turn ();
 
