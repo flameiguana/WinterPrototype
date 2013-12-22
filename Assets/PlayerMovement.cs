@@ -7,6 +7,7 @@ public class PlayerMovement : MonoBehaviour {
 	public NetworkPlayer? theOwner;
 	int physicsStep = 0;
 	int cachedSteps = 0;
+	public bool DEBUG;
 	float width;
 
 	Vector3 physicsPosition;
@@ -66,7 +67,7 @@ public class PlayerMovement : MonoBehaviour {
 	void FixedUpdate () {
 	 //We make sure the player associated with this object controls input
 		//serverCurrentAxes = ;
-		if (theOwner != null && Network.player.Equals(theOwner)){
+		if (theOwner != null && Network.player.Equals(theOwner) && !DEBUG){
 			Vector3 axes = new Vector3(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"), 0);
 			if(axes != lastClientAxes || cachedSteps >= 3){
 				lastClientAxes = axes;
@@ -86,7 +87,7 @@ public class PlayerMovement : MonoBehaviour {
 		}
 
 		/* Smooth player movement for host's view*/
-		else if(Network.isServer){ //server side smoothing
+		else if(Network.isServer && !DEBUG){ //server side smoothing
 			Vector3 positionDifference = physicsPosition - transform.position;
 			float distanceApart = positionDifference.magnitude;
 			if(distanceApart < width/24.0f)
