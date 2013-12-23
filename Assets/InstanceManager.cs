@@ -44,7 +44,6 @@ public class InstanceManager : MonoBehaviour {
 		}
 		playerScripts.RemoveAt(index);
 	}
-	
 
 	/*
 	 * Here. the player would spawn his own character

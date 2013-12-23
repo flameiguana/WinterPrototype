@@ -10,9 +10,16 @@ public class PlayerMovement : MonoBehaviour {
 	public bool DEBUG;
 	float width;
 	bool facingRight = true;
-
+	bool onGround = false;
+	bool jump = false;
+	const float groundRadius = 0.2f;
+	public Transform groundCheck;
+	public LayerMask ground;
+	public float JUMP_FORCE;
 	Vector3 physicsPosition;
 	Vector3 authorizedPosition;
+	Vector3 authorizedVelocity;
+
 	/*The physics state
 	struct State{
 		Vector3 velocity;
@@ -31,6 +38,12 @@ public class PlayerMovement : MonoBehaviour {
 
 	void Start(){
 		SpriteRenderer myRenderer = gameObject.GetComponent<SpriteRenderer>();
+/*
+		if(theOwner != Network.player && !Network.isServer){
+			rigidbody2D.Sleep();
+		}
+		*/
+
 		authorizedPosition = transform.position;
 		physicsPosition = transform.position;
 		width = myRenderer.bounds.size.x;
@@ -68,7 +81,17 @@ public class PlayerMovement : MonoBehaviour {
 		//This is the physics simulation part
 		float speed = 6.0f; //6 units per second
 		rigidbody2D.velocity = new Vector2(axes.x * speed * frames, rigidbody2D.velocity.y);
+		if(jump){
+			rigidbody2D.AddForce(new Vector2(0, JUMP_FORCE));
+			jump = false;
+		}
 		//physicsPosition = physicsPosition + axes * speed * deltaTime;
+	}
+
+	void Update(){
+		if(onGround && Input.GetKeyDown(KeyCode.Space)){
+			jump = true;
+		}
 	}
 
 	// TODO: If we add more buttons, put them on queue to be sent on next frame
@@ -76,6 +99,7 @@ public class PlayerMovement : MonoBehaviour {
 	 //We make sure the player associated with this object controls input
 		//serverCurrentAxes = ;
 		if (theOwner != null && Network.player.Equals(theOwner)){
+			onGround = Physics2D.OverlapCircle(groundCheck.position , groundRadius, ground);
 			Vector3 axes = new Vector3(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"), 0);
 			if(axes != lastClientAxes || cachedSteps >= 3){
 				lastClientAxes = axes;
@@ -98,7 +122,7 @@ public class PlayerMovement : MonoBehaviour {
 		}
 
 		/* Smooth player movement for host's view*/
-		else if(Network.isServer){ //server side smoothing
+		else if(Network.isServer && !DEBUG){ //server side smoothing
 			Vector3 positionDifference = physicsPosition - transform.position;
 			float distanceApart = positionDifference.magnitude;
 			if(distanceApart < width/24.0f)
@@ -115,6 +139,7 @@ public class PlayerMovement : MonoBehaviour {
 				transform.position = authorizedPosition; //snap
 			else
 				transform.position += positionDifference * .1f; //smooth
+			rigidbody2D.velocity = authorizedVelocity;
 			//TODO: find a more consistent smoothing functions
 		}
 	}
@@ -123,14 +148,19 @@ public class PlayerMovement : MonoBehaviour {
 		//given that the client didn't instantiate the object, they will never be the one writing.
 		// it is always the host
 		if(stream.isWriting){
-			Vector3 myPos = physicsPosition;
+			Vector3 myPos = transform.position;
 			stream.Serialize(ref myPos);
+			Vector3 myVelocity = rigidbody2D.velocity;
+			stream.Serialize(ref myVelocity);
 		}
 		else
 		{
 			/*clients receive authoritative position*/
 			authorizedPosition = Vector3.zero;
 			stream.Serialize(ref authorizedPosition);
+			//snap velocity
+			authorizedVelocity = Vector3.zero;
+			stream.Serialize(ref authorizedVelocity);
 		}
 	}
 }
