@@ -47,8 +47,9 @@ public class Player : MonoBehaviour {
 	// Use this for initialization
 	void Start ()
 	{
-		SpriteRenderer myRenderer = gameObject.GetComponent<SpriteRenderer>();
-		width = myRenderer.bounds.size.x;
+		BoxCollider2D collider = gameObject.GetComponent<BoxCollider2D>();
+
+		width = collider.size.x;
 		Debug.Log(width);
 		localPosition = transform.position;
 	}
