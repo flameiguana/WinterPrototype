@@ -3,6 +3,8 @@ using System.Collections;
 
 public class PlayerMovement : MonoBehaviour {
 
+	State serverState;
+	CircularBuffer<Move> moveBuffer;
 	//make this nullable
 	public NetworkPlayer? theOwner;
 	int physicsStep = 0;
@@ -20,30 +22,24 @@ public class PlayerMovement : MonoBehaviour {
 	Vector3 authorizedPosition;
 	Vector3 authorizedVelocity;
 
-	/*The physics state
 	struct State{
-		Vector3 velocity;
-		Vector3 position;
+		public Vector3 velocity;
+		public Vector3 position;
+		public int physicsStep;
 	}
 
 	struct Move{
-		float time;
-		//The input
-		Vector3 axes;
-		State state;
+		public Vector3 axes;
+		public State state;
 	}
-	*/
 
+	int serverCurrentStep;
 	Vector3 serverCurrentAxes, lastClientAxes;
 
 	void Start(){
 		SpriteRenderer myRenderer = gameObject.GetComponent<SpriteRenderer>();
-/*
-		if(theOwner != Network.player && !Network.isServer){
-			rigidbody2D.Sleep();
-		}
-		*/
-
+		moveBuffer = new CircularBuffer<Move>(60);
+		serverState = new State();
 		authorizedPosition = transform.position;
 		physicsPosition = transform.position;
 		width = myRenderer.bounds.size.x;
@@ -76,12 +72,13 @@ public class PlayerMovement : MonoBehaviour {
 		localScale.x *= -1;
 		transform.localScale = localScale;
 	}
+
+
 	//In the future this function would handle collisions and gravity.
 	void StepPhysics(Vector3 axes, float frames){
-		//This is the physics simulation part
 		float speed = 6.0f; //6 units per second
 		rigidbody2D.velocity = new Vector2(axes.x * speed * frames, rigidbody2D.velocity.y);
-		if(jump){
+		if(axes.z > 0){
 			rigidbody2D.AddForce(new Vector2(0, JUMP_FORCE));
 			jump = false;
 		}
@@ -94,19 +91,52 @@ public class PlayerMovement : MonoBehaviour {
 		}
 	}
 
+	void ClientCorrection(){
+		//Discard irrelevant moves
+		while(serverState.physicsStep > moveBuffer.ReadOldest().state.physicsStep && !moveBuffer.IsEmpty())
+			moveBuffer.DiscardOldest();
+		if(!moveBuffer.IsEmpty() && moveBuffer.ReadOldest().state.physicsStep == serverState.physicsStep)
+		{
+			bool withinThreshold = false;
+			if(withinThreshold){
+				//correct our current state with what the server says is correct + our input since then
+				//rewind
+				physicsStep = serverState.physicsStep;
+				transform.position = serverState.position;
+				rigidbody2D.velocity = serverState.velocity;
+				//assume our input is the same as it was on the server.
+				Vector3 input = moveBuffer.ReadOldest().axes;
+				moveBuffer.DiscardOldest();
+
+				//go from oldest move to current move
+				foreach(Move move in moveBuffer){
+					//here we would step physics and re apply moves up till the current one.
+					//I don't know if this is possible or even efficient to do so in unity
+				}
+			}
+		}
+	}
+
 	// TODO: If we add more buttons, put them on queue to be sent on next frame
 	void FixedUpdate () {
 	 //We make sure the player associated with this object controls input
-		//serverCurrentAxes = ;
 		if (theOwner != null && Network.player.Equals(theOwner)){
 			onGround = Physics2D.OverlapCircle(groundCheck.position , groundRadius, ground);
-			Vector3 axes = new Vector3(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"), 0);
+			float up = jump ? 1.0f : 0.0f;
+			Vector3 axes = new Vector3(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"), up);
 			if(axes != lastClientAxes || cachedSteps >= 3){
 				lastClientAxes = axes;
 				if (Network.isClient)
 				{
-					//Needs permission to move. Note this sends a move when we let go of button
-					//as well
+					//store move locally
+					Move move = new Move();
+					move.state = new State();
+					move.state.position = transform.position;
+					move.state.velocity = rigidbody2D.velocity;
+					move.axes = axes;
+					move.state.physicsStep = physicsStep;
+					moveBuffer.Add(move);
+					//Needs permission to move. Note this sends a move when we let go of button as well
 					networkView.RPC("SendNewInput", RPCMode.Server, axes, physicsStep);
 				}
 				cachedSteps = 0;
@@ -152,15 +182,25 @@ public class PlayerMovement : MonoBehaviour {
 			stream.Serialize(ref myPos);
 			Vector3 myVelocity = rigidbody2D.velocity;
 			stream.Serialize(ref myVelocity);
+
+			stream.Serialize (ref serverCurrentStep);
 		}
 		else
 		{
 			/*clients receive authoritative position*/
 			authorizedPosition = Vector3.zero;
 			stream.Serialize(ref authorizedPosition);
+
 			//snap velocity
 			authorizedVelocity = Vector3.zero;
 			stream.Serialize(ref authorizedVelocity);
+
+			int serverStep = 0;
+			stream.Serialize(ref serverStep);
+
+			serverState.position = authorizedPosition;
+			serverState.velocity = authorizedVelocity;
+			serverState.physicsStep = serverStep;
 		}
 	}
 }

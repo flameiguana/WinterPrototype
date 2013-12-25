@@ -115,7 +115,7 @@ MonoBehaviour:
   ground:
     serializedVersion: 2
     m_Bits: 512
-  JUMP_FORCE: 1200
+  JUMP_FORCE: 1900
 --- !u!148 &14800000
 NetworkView:
   m_ObjectHideFlags: 1
