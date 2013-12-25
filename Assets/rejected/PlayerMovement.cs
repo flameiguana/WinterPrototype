@@ -85,11 +85,7 @@ public class PlayerMovement : MonoBehaviour {
 		//physicsPosition = physicsPosition + axes * speed * deltaTime;
 	}
 
-	void Update(){
-		if(onGround && Input.GetKeyDown(KeyCode.Space)){
-			jump = true;
-		}
-	}
+
 
 	void ClientCorrection(){
 		//Discard irrelevant moves
@@ -153,10 +149,10 @@ public class PlayerMovement : MonoBehaviour {
 
 		/* Smooth player movement for host's view*/
 		else if(Network.isServer && !DEBUG){ //server side smoothing
-			Vector3 positionDifference = physicsPosition - transform.position;
+			Vector3 positionDifference = transform.position - physicsPosition;
 			float distanceApart = positionDifference.magnitude;
-			if(distanceApart < width/24.0f)
-				transform.position = physicsPosition;
+			if(distanceApart > width*4.0f || distanceApart < width/24.0f)
+				transform.position = transform.position;
 			else
 				transform.position += positionDifference * .1f;
 		}
@@ -174,6 +170,13 @@ public class PlayerMovement : MonoBehaviour {
 		}
 	}
 
+	void Update(){
+		if(onGround && Input.GetKeyDown(KeyCode.Space)){
+			jump = true;
+		}
+		physicsPosition = transform.position;
+	}
+	
 	void OnSerializeNetworkView(BitStream stream, NetworkMessageInfo info){
 		//given that the client didn't instantiate the object, they will never be the one writing.
 		// it is always the host
@@ -182,7 +185,6 @@ public class PlayerMovement : MonoBehaviour {
 			stream.Serialize(ref myPos);
 			Vector3 myVelocity = rigidbody2D.velocity;
 			stream.Serialize(ref myVelocity);
-
 			stream.Serialize (ref serverCurrentStep);
 		}
 		else

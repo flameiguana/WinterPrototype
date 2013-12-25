@@ -12,8 +12,8 @@ GameObject:
   - 95: {fileID: 9500000}
   - 114: {fileID: 11400000}
   - 148: {fileID: 14800000}
-  - 50: {fileID: 5000000}
   - 61: {fileID: 6100000}
+  - 50: {fileID: 5000000}
   m_Layer: 8
   m_Name: zombie_0
   m_TagString: Untagged
@@ -43,7 +43,7 @@ Transform:
   m_PrefabInternal: {fileID: 100100000}
   m_GameObject: {fileID: 100000}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -4.76142645, y: 3.07416654, z: 0}
+  m_LocalPosition: {x: -.310087889, y: -1.70062244, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
   - {fileID: 400002}
@@ -83,8 +83,8 @@ BoxCollider2D:
   m_Enabled: 1
   m_Material: {fileID: 0}
   m_IsTrigger: 0
-  m_Size: {x: .660000026, y: 1.41666663}
-  m_Center: {x: 0, y: 0}
+  m_Size: {x: .419999987, y: 1.24000001}
+  m_Center: {x: 0, y: -.0700000003}
 --- !u!95 &9500000
 Animator:
   serializedVersion: 2
@@ -107,15 +107,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 100000}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4c51eed8f112aca498feeac828cf4173, type: 3}
+  m_Script: {fileID: 11500000, guid: a7bd34e905950be469a76d05f86f78a7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  DEBUG: 1
   groundCheck: {fileID: 400002}
   ground:
     serializedVersion: 2
     m_Bits: 512
-  JUMP_FORCE: 1900
+  JUMP_FORCE: 2000
 --- !u!148 &14800000
 NetworkView:
   m_ObjectHideFlags: 1

@@ -98,7 +98,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 238578870}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1e0bddcaf70420749bf4a0d6cf6c98be, type: 3}
+  m_Script: {fileID: 11500000, guid: 07b3315a3663f584581ec41339b90a49, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   characterPrefab: {fileID: 400000, guid: e3476d6df2d0cd24287817bd436b8ac9, type: 2}
@@ -155,6 +155,10 @@ Prefab:
     - target: {fileID: 6100000, guid: f8f303706ae779344ac18db836465580, type: 2}
       propertyPath: m_Size.x
       value: .670000017
+      objectReference: {fileID: 0}
+    - target: {fileID: 100000, guid: f8f303706ae779344ac18db836465580, type: 2}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_ParentPrefab: {fileID: 100100000, guid: f8f303706ae779344ac18db836465580, type: 2}
@@ -320,7 +324,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!61 &998821386
 BoxCollider2D:
   m_ObjectHideFlags: 0
@@ -402,7 +406,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!61 &1592318654
 BoxCollider2D:
   m_ObjectHideFlags: 0
