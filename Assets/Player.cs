@@ -1,19 +1,26 @@
 ﻿using UnityEngine;
 using System.Collections;
+using System;
 
 public class Player : MonoBehaviour {
-	
+
+
+	public Rigidbody2D pellet;
+	NetworkPlayer theOwner;
 	bool isOwner = false;
 	/* Movement variables */
 	bool onGround = false;
 	bool jump = false;
 	bool facingRight = true;
+	bool canShoot = true;
 
 	float width;
 	const float groundRadius = 0.2f;
 	public Transform groundCheck;
+	public Transform mouth;
 	public LayerMask ground;
 	public float JUMP_FORCE;
+	public float SHOOT_FORCE;
 
 	/* Synchronization Variables */
 	Vector3 localPosition;
@@ -27,10 +34,32 @@ public class Player : MonoBehaviour {
 	[RPC]
 	void SetPlayerID(NetworkPlayer player)
 	{
+		theOwner = player;
 		if(player == Network.player){
 			isOwner = true;
 			rigidbody2D.isKinematic = false;
 		}
+	}
+
+	//To server
+	[RPC]
+	void ShootRequest(int facingRight)
+	{
+		networkView.RPC("ShotFired", RPCMode.All, facingRight);
+	}
+
+	//To players (and host client)
+	[RPC]
+	void ShotFired(int facingRight){
+
+		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouth.position, Quaternion.identity);
+		Projectile info = projectile.GetComponent<Projectile>();
+		info.theOwner = theOwner;
+		//try doing a constant velocity for better look
+		if(facingRight == 1)
+			projectile.AddForce(new Vector2(SHOOT_FORCE, 0f));
+		else
+			projectile.AddForce(new Vector2(-SHOOT_FORCE, 0f));
 	}
 
 	void Turn(){
@@ -78,16 +107,20 @@ public class Player : MonoBehaviour {
 	// Update is called once per frame
 	void Update ()
 	{
-		if(onGround && Input.GetKeyDown(KeyCode.Space)){
-			jump = true;
+		if(isOwner){
+			if(onGround && Input.GetKeyDown(KeyCode.Space)){
+				jump = true;
+			}
+			if(canShoot && Input.GetKeyDown(KeyCode.Q)){
+				networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight));
+			}
 		}
-
-		if(!isOwner)
+		else
 		{
-			smoothInterval += Time.fixedDeltaTime;
+			smoothInterval += Time.deltaTime;
 			Vector3 positionDifference = serverPosition - localPosition;
 			float distanceApart = positionDifference.magnitude;
-			if(distanceApart > width * 4.0f){
+			if(distanceApart > width * 5.0f){
 				transform.position = serverPosition;
 				localPosition = serverPosition;
 			}
@@ -106,7 +139,6 @@ public class Player : MonoBehaviour {
 			syncPosition = transform.position;
 			stream.Serialize(ref syncPosition);
 			stream.Serialize(ref syncFacing);
-
 		}
 		else
 		{
@@ -122,6 +154,18 @@ public class Player : MonoBehaviour {
 
 			if(syncFacing != facingRight)
 				Turn();
+		}
+	}
+
+	void OnCollisionEnter2D(Collision2D collision){
+		if(collision.gameObject.tag  == "Bullet"){
+			Projectile info = collision.gameObject.GetComponent<Projectile>();
+			if(theOwner == info.theOwner)
+				return;
+			Destroy(collision.gameObject);
+			SpriteRenderer myRenderer = gameObject.GetComponent<SpriteRenderer>();
+			//iTween.ColorTo(myRenderer.gameObject, iTween.Hash("r", 200.0f, "time", 1.0f, "looptype", "pingpong"));
+			myRenderer.color = ColorHSV.GetRandomColor(UnityEngine.Random.Range(0.0f, 360f), 1f, 1f);
 		}
 	}
 }
