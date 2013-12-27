@@ -43,19 +43,20 @@ public class Player : MonoBehaviour {
 
 	//To server
 	[RPC]
-	void ShootRequest(int facingRight)
+	void ShootRequest(int facingRight, Vector3 mouthPosition)
 	{
-		networkView.RPC("ShotFired", RPCMode.All, facingRight);
+		//shoot from where the player currently is (this might still be buggy because position on server is interpolated)
+		networkView.RPC("ShotFired", RPCMode.All, facingRight, mouthPosition);
 	}
 
 	//To players (and host client)
 	[RPC]
-	void ShotFired(int facingRight){
+	void ShotFired(int facingRight, Vector3 mouthPosition){
 
-		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouth.position, Quaternion.identity);
+		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouthPosition, Quaternion.identity);
 		Projectile info = projectile.GetComponent<Projectile>();
 		info.theOwner = theOwner;
-		//try doing a constant velocity for better look
+		//try doing a constant velocity for better look/to make this relevant to grappling hook
 		if(facingRight == 1)
 			projectile.AddForce(new Vector2(SHOOT_FORCE, 0f));
 		else
@@ -77,9 +78,7 @@ public class Player : MonoBehaviour {
 	void Start ()
 	{
 		BoxCollider2D collider = gameObject.GetComponent<BoxCollider2D>();
-
 		width = collider.size.x;
-		Debug.Log(width);
 		localPosition = transform.position;
 	}
 
@@ -112,7 +111,7 @@ public class Player : MonoBehaviour {
 				jump = true;
 			}
 			if(canShoot && Input.GetKeyDown(KeyCode.Q)){
-				networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight));
+				networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight), mouth.position);
 			}
 		}
 		else
@@ -148,10 +147,8 @@ public class Player : MonoBehaviour {
 			//shold remain constant unless we change the sync rate or miss a packet
 			syncDelay = Time.time - lastSynctime;
 			lastSynctime = Time.time;
-
 			localPosition = transform.position;
 			serverPosition = syncPosition;
-
 			if(syncFacing != facingRight)
 				Turn();
 		}

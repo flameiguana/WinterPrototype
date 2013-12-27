@@ -601,6 +601,7 @@ GameObject:
   m_Component:
   - 4: {fileID: 1959707518}
   - 212: {fileID: 1959707517}
+  - 61: {fileID: 1959707519}
   m_Layer: 0
   m_Name: room
   m_TagString: Untagged
@@ -642,3 +643,14 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
+--- !u!61 &1959707519
+BoxCollider2D:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 0}
+  m_GameObject: {fileID: 1959707516}
+  m_Enabled: 1
+  m_Material: {fileID: 0}
+  m_IsTrigger: 1
+  m_Size: {x: 13.333333, y: 8}
+  m_Center: {x: 0, y: 0}

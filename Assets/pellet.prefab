@@ -11,8 +11,9 @@ GameObject:
   - 212: {fileID: 21200000}
   - 95: {fileID: 9500000}
   - 50: {fileID: 5000000}
-  - 61: {fileID: 6100000}
   - 114: {fileID: 11400000}
+  - 96: {fileID: 9600000}
+  - 61: {fileID: 6100000}
   m_Layer: 0
   m_Name: pellet
   m_TagString: Bullet
@@ -27,7 +28,7 @@ Transform:
   m_PrefabInternal: {fileID: 100100000}
   m_GameObject: {fileID: 100000}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.65571797, y: -1.58659744, z: 0}
+  m_LocalPosition: {x: 1.44032145, y: -2.06290936, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
@@ -40,8 +41,8 @@ Rigidbody2D:
   m_Mass: 1
   m_LinearDrag: 0
   m_AngularDrag: 0
-  m_GravityScale: 1
-  m_FixedAngle: 0
+  m_GravityScale: 0
+  m_FixedAngle: 1
   m_IsKinematic: 0
   m_Interpolate: 1
   m_SleepingMode: 1
@@ -55,7 +56,7 @@ BoxCollider2D:
   m_Enabled: 1
   m_Material: {fileID: 0}
   m_IsTrigger: 0
-  m_Size: {x: .166666672, y: .166666672}
+  m_Size: {x: .333333343, y: .333333343}
   m_Center: {x: 0, y: 0}
 --- !u!95 &9500000
 Animator:
@@ -71,6 +72,48 @@ Animator:
   m_ApplyRootMotion: 0
   m_AnimatePhysics: 0
   m_HasTransformHierarchy: 1
+--- !u!96 &9600000
+TrailRenderer:
+  m_ObjectHideFlags: 1
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 100100000}
+  m_GameObject: {fileID: 100000}
+  m_Enabled: 1
+  m_CastShadows: 0
+  m_ReceiveShadows: 0
+  m_LightmapIndex: 255
+  m_LightmapTilingOffset: {x: 1, y: 1, z: 0, w: 0}
+  m_Materials:
+  - {fileID: 10754, guid: 0000000000000000e000000000000000, type: 0}
+  m_SubsetIndices: 
+  m_StaticBatchRoot: {fileID: 0}
+  m_UseLightProbes: 0
+  m_LightProbeAnchor: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_SortingLayerID: 0
+  m_Time: 5
+  m_StartWidth: .119999997
+  m_EndWidth: .119999997
+  m_Colors:
+    m_Color[0]:
+      serializedVersion: 2
+      rgba: 4281743047
+    m_Color[1]:
+      serializedVersion: 2
+      rgba: 4283965432
+    m_Color[2]:
+      serializedVersion: 2
+      rgba: 4279374582
+    m_Color[3]:
+      serializedVersion: 2
+      rgba: 4278650727
+    m_Color[4]:
+      serializedVersion: 2
+      rgba: 1447572
+  m_MinVertexDistance: .100000001
+  m_Autodestruct: 1
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 1

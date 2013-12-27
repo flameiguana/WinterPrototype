@@ -101,14 +101,14 @@ public class PlayerMovement : MonoBehaviour {
 				transform.position = serverState.position;
 				rigidbody2D.velocity = serverState.velocity;
 				//assume our input is the same as it was on the server.
-				Vector3 input = moveBuffer.ReadOldest().axes;
+				//Vector3 input = moveBuffer.ReadOldest().axes;
 				moveBuffer.DiscardOldest();
 
 				//go from oldest move to current move
-				foreach(Move move in moveBuffer){
+			//	foreach(Move move in moveBuffer){
 					//here we would step physics and re apply moves up till the current one.
 					//I don't know if this is possible or even efficient to do so in unity
-				}
+			//	}
 			}
 		}
 	}

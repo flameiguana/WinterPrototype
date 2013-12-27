@@ -50,17 +50,17 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 2
-        height: 2
+        width: 4
+        height: 4
       alignment: 0
       pivot: {x: 0, y: 0}
     - name: pellet_1
       rect:
         serializedVersion: 2
-        x: 2
+        x: 4
         y: 0
-        width: 2
-        height: 2
+        width: 4
+        height: 4
       alignment: 0
       pivot: {x: 0, y: 0}
   spritePackingTag: 

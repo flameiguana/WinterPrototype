@@ -58,7 +58,7 @@ Transform:
   m_PrefabInternal: {fileID: 100100000}
   m_GameObject: {fileID: 100000}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -2.25565982, y: -1.79138362, z: 0}
+  m_LocalPosition: {x: -5.36674261, y: -9.37839317, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
   - {fileID: 400002}
@@ -82,7 +82,7 @@ Transform:
   m_PrefabInternal: {fileID: 100100000}
   m_GameObject: {fileID: 100004}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: .297913909, y: .332724452, z: .538574219}
+  m_LocalPosition: {x: .400764942, y: .332724571, z: .538574219}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 400000}
@@ -144,7 +144,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 512
   JUMP_FORCE: 2000
-  SHOOT_FORCE: 2000
+  SHOOT_FORCE: 250
 --- !u!148 &14800000
 NetworkView:
   m_ObjectHideFlags: 1
