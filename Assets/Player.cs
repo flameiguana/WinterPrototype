@@ -2,6 +2,9 @@
 using System.Collections;
 using System;
 
+//TODO:
+//1. Sync positions to server and then to clients (this relieves most players except host)
+//2. Confirm hit on server (majority vote?, trust 1 client?)
 public class Player : MonoBehaviour {
 
 
@@ -23,13 +26,29 @@ public class Player : MonoBehaviour {
 	public float SHOOT_FORCE;
 
 	/* Synchronization Variables */
-	Vector3 localPosition;
-	Vector3 serverPosition;
-	private float smoothInterval;
+	private float currentSmooth;
 	private float syncDelay;
 	private float lastSynctime;
+	private bool canStart= false;
+	float lerpDelay;
 
+	//
+	float simTime;
 
+	struct State{
+		public Vector3 position;
+		public bool facingRight;
+		public float remoteTime;
+		public float localTime;
+		public State(Vector3 position, bool facingRight){
+			this.position = position;
+			this.facingRight = facingRight;
+			this.remoteTime = float.NaN;
+			this.localTime = float.NaN;
+		}
+	}
+
+	CircularBuffer<State> states;
 
 	[RPC]
 	void SetPlayerID(NetworkPlayer player)
@@ -73,13 +92,18 @@ public class Player : MonoBehaviour {
 	void Awake()
 	{
 		rigidbody2D.isKinematic = true;
+		states = new CircularBuffer<State>(3);
+		lastSynctime = float.PositiveInfinity;
+		syncDelay = 0f;
 	}
 	// Use this for initialization
 	void Start ()
 	{
 		BoxCollider2D collider = gameObject.GetComponent<BoxCollider2D>();
 		width = collider.size.x;
-		localPosition = transform.position;
+		//localPosition = transform.position;
+		lerpDelay = 2f / Network.sendRate; //with tick rate 25, and delay of 2 frames, we have .08s delay
+
 	}
 
 
@@ -101,6 +125,9 @@ public class Player : MonoBehaviour {
 				jump = false;
 			}
 		}
+		else{
+
+		}
 	}
 
 	// Update is called once per frame
@@ -114,20 +141,50 @@ public class Player : MonoBehaviour {
 				networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight), mouth.position);
 			}
 		}
-		else
-		{
-			smoothInterval += Time.deltaTime;
-			Vector3 positionDifference = serverPosition - localPosition;
-			float distanceApart = positionDifference.magnitude;
-			if(distanceApart > width * 5.0f){
-				transform.position = serverPosition;
-				localPosition = serverPosition;
+		else{
+			if(canStart){
+				//Debug.Log("now interpolating");
+
+				//read the two oldest states.
+				State oldState = states.ReadOldest();
+				
+				State newState = states.ReadAt(1);
+
+				float interval = newState.localTime - oldState.localTime;
+				currentSmooth += Time.deltaTime;
+
+
+				simTime = Time.time - lerpDelay; // this might be risky if we skip a frame
+
+
+
+				if(newState.facingRight != facingRight)
+					Turn();
+				//Vector3 positionDifference = serverPosition - localPosition;
+				Vector3 positionDifference = newState.position - oldState.position;
+				float distanceApart = positionDifference.magnitude;
+				if(distanceApart > width * 5.0f){
+					transform.position = newState.position;
+					oldState.position = newState.position;
+				}
+				else
+					transform.position = Vector3.Lerp(oldState.position, newState.position,
+						currentSmooth/(interval));
+				//under review:
+				//assume we lost a packet, move to newer state
+				if(currentSmooth >= interval * 1.1){
+					if(states.Count > 2){
+						Debug.Log("moving on");
+						states.DiscardOldest();
+						currentSmooth = 0f;
+					}
+				}
+
 			}
-			else
-				transform.position = Vector3.Lerp(localPosition, serverPosition, smoothInterval/syncDelay);
 		}
 	}
 
+	bool modifyLerpTime = false;
 	void OnSerializeNetworkView(BitStream stream, NetworkMessageInfo info)
 	{
 		Vector3 syncPosition = Vector3.zero;
@@ -141,16 +198,46 @@ public class Player : MonoBehaviour {
 		}
 		else
 		{
+			//reject out of order/duplicate packets
+			//not sure if this can verify that a packet was lost yet;
+			if(states.Count >= 3){
+				canStart = true;
+				double newestTime = states.ReadNewest().remoteTime;
+				if(info.timestamp > newestTime + 1f/Network.sendRate * 1.5f){
+					Debug.Log("lost previous packet");
+					Debug.Log("local" + newestTime + "server" + info.timestamp);
+					modifyLerpTime = true;
+				}
+				else if(info.timestamp < newestTime) {
+					Debug.Log("out of order packet");
+					return;
+				}
+				else if(info.timestamp == newestTime){
+					Debug.Log("duplicate packet");
+					return;
+				}
+			}
+
+			//The period of time spent without an update.
+			if(!modifyLerpTime)
+				syncDelay = Time.time - lastSynctime;
+			else{
+				syncDelay = syncDelay + (Time.time - lastSynctime);
+				modifyLerpTime = false;
+			}
+
+			currentSmooth = 0f; //reset period of interpolation, since we got new packet
+
 			stream.Serialize(ref syncPosition);
 			stream.Serialize(ref syncFacing);
-			smoothInterval = 0f;
-			//shold remain constant unless we change the sync rate or miss a packet
-			syncDelay = Time.time - lastSynctime;
+			State state = new State(syncPosition, syncFacing);
+			state.remoteTime = (float)info.timestamp;
+			state.localTime = Time.time;
+			states.Add(state); //if we advanced buffer manually, then count < maxsize
+
 			lastSynctime = Time.time;
-			localPosition = transform.position;
-			serverPosition = syncPosition;
-			if(syncFacing != facingRight)
-				Turn();
+			/* if(syncFacing != facingRight)
+				Turn(); */
 		}
 	}
 
