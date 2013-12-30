@@ -26,7 +26,7 @@ public class NetworkManager : MonoBehaviour {
 			}
 			if (GUI.Button(new Rect(10, 50, 120, 20), "Initialize Server"))
 			{
-				Network.InitializeServer(5, connectionPort, !Network.HavePublicAddress());
+				Network.InitializeServer(7, connectionPort, !Network.HavePublicAddress());
 				MasterServer.RegisterHost(typeName, gameName);
 			}
 		}

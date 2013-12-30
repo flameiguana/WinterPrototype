@@ -11,4 +11,8 @@ public class Projectile : MonoBehaviour {
 	public void OnTriggerExit2D(Collider2D collider){
 		Destroy (gameObject);
 	}
+	void OnCollisionEnter2D(Collision2D collision){
+		if(collision.gameObject.tag  == "Bullet")
+			Destroy(collision.gameObject);
+	}
 }

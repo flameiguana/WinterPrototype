@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 using System;
 
 //TODO:
@@ -31,10 +32,8 @@ public class Player : MonoBehaviour {
 	private float lastSynctime;
 	private bool canStart= false;
 	float lerpDelay;
-
-	//
 	float simTime;
-
+	
 	struct State{
 		public Vector3 position;
 		public bool facingRight;
@@ -45,6 +44,16 @@ public class Player : MonoBehaviour {
 			this.facingRight = facingRight;
 			this.remoteTime = float.NaN;
 			this.localTime = float.NaN;
+		}
+	}
+
+	private Queue<Event> eventQueue;
+	public class Event{
+		public string functionName;
+		public double timestamp;
+		public ArrayList parameters;
+		public Event(){
+			parameters = new ArrayList();
 		}
 	}
 
@@ -62,19 +71,36 @@ public class Player : MonoBehaviour {
 
 	//To server
 	[RPC]
-	void ShootRequest(int facingRight, Vector3 mouthPosition)
+	void ShootRequest(int facingRight, Vector3 mouthPosition, NetworkMessageInfo info)
 	{
 		//shoot from where the player currently is (this might still be buggy because position on server is interpolated)
-		networkView.RPC("ShotFired", RPCMode.All, facingRight, mouthPosition);
+		networkView.RPC("Shoot", RPCMode.All, facingRight, mouthPosition, (float)info.timestamp);
 	}
-
+	
 	//To players (and host client)
 	[RPC]
-	void ShotFired(int facingRight, Vector3 mouthPosition){
+	void Shoot(int facingRight, Vector3 mouthPosition, float originalTime,  NetworkMessageInfo info){
 
+
+		//Debug.Log("Storing Event");
+		if(originalTime > simTime){
+			//TODO: store lag ino order to push projectile forwards to sync with player who launched
+			//Debug.Log("Storing Event");
+			Event doLater = new Event();
+			doLater.functionName = "Shoot";
+			doLater.timestamp = originalTime;
+			doLater.parameters.Add(facingRight);
+			doLater.parameters.Add(mouthPosition);
+			//doLater.parameters.Add(info);
+			eventQueue.Enqueue(doLater);
+			return;
+		}
+
+	}
+	void ShootLocal(int facingRight, Vector3 mouthPosition){
 		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouthPosition, Quaternion.identity);
-		Projectile info = projectile.GetComponent<Projectile>();
-		info.theOwner = theOwner;
+		Projectile script = projectile.GetComponent<Projectile>();
+		script.theOwner = theOwner;
 		//try doing a constant velocity for better look/to make this relevant to grappling hook
 		if(facingRight == 1)
 			projectile.AddForce(new Vector2(SHOOT_FORCE, 0f));
@@ -93,6 +119,7 @@ public class Player : MonoBehaviour {
 	{
 		rigidbody2D.isKinematic = true;
 		states = new CircularBuffer<State>(3);
+		eventQueue = new Queue<Event>();
 		lastSynctime = float.PositiveInfinity;
 		syncDelay = 0f;
 	}
@@ -105,8 +132,7 @@ public class Player : MonoBehaviour {
 		lerpDelay = 2f / Network.sendRate; //with tick rate 25, and delay of 2 frames, we have .08s delay
 
 	}
-
-
+	
 	void FixedUpdate()
 	{
 		if (isOwner){
@@ -139,11 +165,15 @@ public class Player : MonoBehaviour {
 			}
 			if(canShoot && Input.GetKeyDown(KeyCode.Q)){
 				networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight), mouth.position);
+				//Mode 1, shoot instantly
+				ShootLocal(Convert.ToInt32(facingRight), mouth.position);
+
 			}
 		}
 		else{
+
 			if(canStart){
-				//Debug.Log("now interpolating");
+				simTime = (float)Network.time - lerpDelay; // this might be risky if we skip a frame
 
 				//read the two oldest states.
 				State oldState = states.ReadOldest();
@@ -152,11 +182,6 @@ public class Player : MonoBehaviour {
 
 				float interval = newState.localTime - oldState.localTime;
 				currentSmooth += Time.deltaTime;
-
-
-				simTime = Time.time - lerpDelay; // this might be risky if we skip a frame
-
-
 
 				if(newState.facingRight != facingRight)
 					Turn();
@@ -180,6 +205,14 @@ public class Player : MonoBehaviour {
 					}
 				}
 
+				//Process 1 event
+				if(eventQueue.Count != 0){
+					if(eventQueue.Peek().timestamp <= simTime){
+						Event doNow = eventQueue.Dequeue();
+						if(doNow.functionName == "Shoot")
+							ShootLocal ((int)doNow.parameters[0], (Vector3)doNow.parameters[1]);
+					}
+				}
 			}
 		}
 	}
@@ -232,7 +265,7 @@ public class Player : MonoBehaviour {
 			stream.Serialize(ref syncFacing);
 			State state = new State(syncPosition, syncFacing);
 			state.remoteTime = (float)info.timestamp;
-			state.localTime = Time.time;
+			state.localTime = (float)Network.time;
 			states.Add(state); //if we advanced buffer manually, then count < maxsize
 
 			lastSynctime = Time.time;
