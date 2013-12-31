@@ -144,7 +144,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 512
   JUMP_FORCE: 2000
-  SHOOT_FORCE: 250
+  SHOOT_VELOCITY: 10
 --- !u!148 &14800000
 NetworkView:
   m_ObjectHideFlags: 1

@@ -24,7 +24,7 @@ public class Player : MonoBehaviour {
 	public Transform mouth;
 	public LayerMask ground;
 	public float JUMP_FORCE;
-	public float SHOOT_FORCE;
+	public float SHOOT_VELOCITY;
 
 	/* Synchronization Variables */
 	private float currentSmooth;
@@ -50,7 +50,7 @@ public class Player : MonoBehaviour {
 	private Queue<Event> eventQueue;
 	public class Event{
 		public string functionName;
-		public double timestamp;
+		public float timestamp;
 		public ArrayList parameters;
 		public Event(){
 			parameters = new ArrayList();
@@ -97,15 +97,17 @@ public class Player : MonoBehaviour {
 		}
 
 	}
-	void ShootLocal(int facingRight, Vector3 mouthPosition){
+	void ShootLocal(int facingRight, Vector3 mouthPosition, float lag){
+		float distanceApart  = lag * SHOOT_VELOCITY;
+		mouthPosition.x = mouthPosition.x + distanceApart * 2f;
 		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouthPosition, Quaternion.identity);
 		Projectile script = projectile.GetComponent<Projectile>();
 		script.theOwner = theOwner;
 		//try doing a constant velocity for better look/to make this relevant to grappling hook
 		if(facingRight == 1)
-			projectile.AddForce(new Vector2(SHOOT_FORCE, 0f));
+			projectile.velocity = (new Vector2(SHOOT_VELOCITY, 0f));
 		else
-			projectile.AddForce(new Vector2(-SHOOT_FORCE, 0f));
+			projectile.velocity = (new Vector2(-SHOOT_VELOCITY, 0f));
 	}
 
 	void Turn(){
@@ -152,7 +154,14 @@ public class Player : MonoBehaviour {
 			}
 		}
 		else{
-
+			//Process 1 event
+			if(eventQueue.Count != 0){
+				if(eventQueue.Peek().timestamp <= simTime){
+					Event doNow = eventQueue.Dequeue();
+					if(doNow.functionName == "Shoot")
+						ShootLocal ((int)doNow.parameters[0], (Vector3)doNow.parameters[1], ((float)Network.time - doNow.timestamp));
+				}
+			}
 		}
 	}
 
@@ -166,7 +175,7 @@ public class Player : MonoBehaviour {
 			if(canShoot && Input.GetKeyDown(KeyCode.Q)){
 				networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight), mouth.position);
 				//Mode 1, shoot instantly
-				ShootLocal(Convert.ToInt32(facingRight), mouth.position);
+				ShootLocal(Convert.ToInt32(facingRight), mouth.position, 0f);
 
 			}
 		}
@@ -197,22 +206,17 @@ public class Player : MonoBehaviour {
 						currentSmooth/(interval));
 				//under review:
 				//assume we lost a packet, move to newer state
-				if(currentSmooth >= interval * 1.1){
+				if(currentSmooth >= interval){
 					if(states.Count > 2){
-						Debug.Log("moving on");
+						//Debug.Log("moving on");
 						states.DiscardOldest();
 						currentSmooth = 0f;
 					}
+					else
+						Debug.Log ("Not enough buffer");
 				}
 
-				//Process 1 event
-				if(eventQueue.Count != 0){
-					if(eventQueue.Peek().timestamp <= simTime){
-						Event doNow = eventQueue.Dequeue();
-						if(doNow.functionName == "Shoot")
-							ShootLocal ((int)doNow.parameters[0], (Vector3)doNow.parameters[1]);
-					}
-				}
+
 			}
 		}
 	}
@@ -251,14 +255,6 @@ public class Player : MonoBehaviour {
 				}
 			}
 
-			//The period of time spent without an update.
-			if(!modifyLerpTime)
-				syncDelay = Time.time - lastSynctime;
-			else{
-				syncDelay = syncDelay + (Time.time - lastSynctime);
-				modifyLerpTime = false;
-			}
-
 			currentSmooth = 0f; //reset period of interpolation, since we got new packet
 
 			stream.Serialize(ref syncPosition);
@@ -274,11 +270,15 @@ public class Player : MonoBehaviour {
 		}
 	}
 
+	void ApplyDamage(){
+
+	}
 	void OnCollisionEnter2D(Collision2D collision){
 		if(collision.gameObject.tag  == "Bullet"){
 			Projectile info = collision.gameObject.GetComponent<Projectile>();
 			if(theOwner == info.theOwner)
 				return;
+
 			Destroy(collision.gameObject);
 			SpriteRenderer myRenderer = gameObject.GetComponent<SpriteRenderer>();
 			//iTween.ColorTo(myRenderer.gameObject, iTween.Hash("r", 200.0f, "time", 1.0f, "looptype", "pingpong"));
