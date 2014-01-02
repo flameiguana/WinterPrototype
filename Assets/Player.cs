@@ -73,21 +73,22 @@ public class Player : MonoBehaviour {
 	[RPC]
 	void ShootRequest(int facingRight, Vector3 mouthPosition, NetworkMessageInfo info)
 	{
+		float requestDelta =  (float)(Network.time - info.timestamp); 	//This variable stores the delay from sender to here.
 		//shoot from where the player currently is (this might still be buggy because position on server is interpolated)
-		networkView.RPC("Shoot", RPCMode.Others, facingRight, mouthPosition, (float)info.timestamp);
+		networkView.RPC("Shoot", RPCMode.Others, facingRight, mouthPosition, requestDelta);
 		//We know that only the server reads this function, so we can call the following without checking
 		//if we're on the server
 		//since times in info and original time are the same, lag will be less than on client b
-		Shoot (facingRight, mouthPosition, (float)info.timestamp, info);
+		Shoot (facingRight, mouthPosition,requestDelta, info);
 	}
 	
 	//To players (and host client)
 	[RPC]
-	void Shoot(int facingRight, Vector3 mouthPosition, float originalTime,  NetworkMessageInfo info){
+	void Shoot(int facingRight, Vector3 mouthPosition, float requestDelta,  NetworkMessageInfo info){
 		if(isOwner)
 			return; //reject the message because you already did it
-
-		if(info.timestamp > simTime){
+		float originalTime = (float)info.timestamp - requestDelta;
+		if(originalTime > simTime){
 			//TODO: store lag ino order to push projectile forwards to sync with player who launched
 			//Debug.Log("Storing Event");
 			Event doLater = new Event();
@@ -100,9 +101,10 @@ public class Player : MonoBehaviour {
 			return;
 		}
 		else
-			Debug.Log ("Too late. Local: " + simTime + " Remote: " + info.timestamp);
+			Debug.Log ("Too late. Local: " + simTime + " Remote: " + originalTime);
 	}
 
+	//The function that actually spawns the rocket.
 	void ShootLocal(int facingRight, Vector3 mouthPosition, float lag){
 
 		float flip = 1f;
@@ -110,7 +112,7 @@ public class Player : MonoBehaviour {
 			flip = -1f;
 		//teleport. In teh real game we would just speed up rocket
 		float distanceApart  = lag * SHOOT_VELOCITY;
-		Debug.Log("lag: " + lag); 
+		//Debug.Log("lag: " + lag); 
 		mouthPosition.x = mouthPosition.x + flip * (distanceApart * 2f);
 		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouthPosition, Quaternion.identity);
 		Projectile script = projectile.GetComponent<Projectile>();
@@ -165,7 +167,7 @@ public class Player : MonoBehaviour {
 			if(eventQueue.Count != 0){
 				if(DEBUG || eventQueue.Peek().timestamp <= simTime){
 					Event doNow = eventQueue.Dequeue();
-					Debug.Log ("Local: " + Network.time + " Remote: " + doNow.timestamp);
+					//Debug.Log ("Local: " + Network.time + " Remote: " + doNow.timestamp);
 					if(doNow.functionName == "Shoot")
 						ShootLocal ((int)doNow.parameters[0], (Vector3)doNow.parameters[1], ((float)Network.time - doNow.timestamp));
 				}
@@ -183,7 +185,7 @@ public class Player : MonoBehaviour {
 			}
 			if(canShoot && Input.GetKeyDown(KeyCode.Q)){
 				if(Network.isServer){
-					networkView.RPC("Shoot", RPCMode.Others, Convert.ToInt32(facingRight), mouth.position, (float)Network.time);
+					networkView.RPC("Shoot", RPCMode.Others, Convert.ToInt32(facingRight), mouth.position, 0f); //0 network delay
 				}
 				else{
 					networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight), mouth.position);
