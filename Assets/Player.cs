@@ -6,8 +6,11 @@ using System;
 //TODO:
 //1. Sync positions to server and then to clients (this relieves most players except host)
 //2. Confirm hit on server (majority vote?, trust 1 client?)
+//enhance the realism of attacks at the expense of the realism of taking damage. However, this does not
+//apply to rockets or melee
 public class Player : MonoBehaviour {
 
+	public bool DEBUG;
 
 	public Rigidbody2D pellet;
 	NetworkPlayer theOwner;
@@ -26,10 +29,8 @@ public class Player : MonoBehaviour {
 	public float JUMP_FORCE;
 	public float SHOOT_VELOCITY;
 
-	/* Synchronization Variables */
-	private float currentSmooth;
-	private float syncDelay;
-	private float lastSynctime;
+	/* Synchronization Variables */                                                                                                                                                                                                                                      
+	private float currentSmooth =0f;
 	private bool canStart= false;
 	float lerpDelay;
 	float simTime;
@@ -63,7 +64,7 @@ public class Player : MonoBehaviour {
 	void SetPlayerID(NetworkPlayer player)
 	{
 		theOwner = player;
-		if(player == Network.player){
+		if(player == Network.player){ 
 			isOwner = true;
 			rigidbody2D.isKinematic = false;
 		}
@@ -74,15 +75,19 @@ public class Player : MonoBehaviour {
 	void ShootRequest(int facingRight, Vector3 mouthPosition, NetworkMessageInfo info)
 	{
 		//shoot from where the player currently is (this might still be buggy because position on server is interpolated)
-		networkView.RPC("Shoot", RPCMode.All, facingRight, mouthPosition, (float)info.timestamp);
+		networkView.RPC("Shoot", RPCMode.Others, facingRight, mouthPosition, (float)info.timestamp);
+		//We know that only the server reads this function, so we can call the following without checking
+		//if we're on the server
+		//since times in info and original time are the same, lag will be less than on client b
+		Shoot (facingRight, mouthPosition, (float)info.timestamp, info);
 	}
 	
 	//To players (and host client)
 	[RPC]
 	void Shoot(int facingRight, Vector3 mouthPosition, float originalTime,  NetworkMessageInfo info){
+		if(isOwner)
+			return; //reject the message because you already did it
 
-
-		//Debug.Log("Storing Event");
 		if(originalTime > simTime){
 			//TODO: store lag ino order to push projectile forwards to sync with player who launched
 			//Debug.Log("Storing Event");
@@ -95,19 +100,24 @@ public class Player : MonoBehaviour {
 			eventQueue.Enqueue(doLater);
 			return;
 		}
-
+		else
+			Debug.Log ("Too late");
 	}
+
 	void ShootLocal(int facingRight, Vector3 mouthPosition, float lag){
+
+		float flip = 1f;
+		if(facingRight != 1)
+			flip = -1f;
+		//teleport. In teh real game we would just speed up rocket
 		float distanceApart  = lag * SHOOT_VELOCITY;
-		mouthPosition.x = mouthPosition.x + distanceApart * 2f;
+		mouthPosition.x = mouthPosition.x + flip * (distanceApart * 2f);
 		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouthPosition, Quaternion.identity);
 		Projectile script = projectile.GetComponent<Projectile>();
 		script.theOwner = theOwner;
 		//try doing a constant velocity for better look/to make this relevant to grappling hook
-		if(facingRight == 1)
-			projectile.velocity = (new Vector2(SHOOT_VELOCITY, 0f));
-		else
-			projectile.velocity = (new Vector2(-SHOOT_VELOCITY, 0f));
+
+		projectile.velocity = (new Vector2(SHOOT_VELOCITY*flip, 0f));
 	}
 
 	void Turn(){
@@ -120,10 +130,8 @@ public class Player : MonoBehaviour {
 	void Awake()
 	{
 		rigidbody2D.isKinematic = true;
-		states = new CircularBuffer<State>(3);
+		states = new CircularBuffer<State>(4);
 		eventQueue = new Queue<Event>();
-		lastSynctime = float.PositiveInfinity;
-		syncDelay = 0f;
 	}
 	// Use this for initialization
 	void Start ()
@@ -132,7 +140,6 @@ public class Player : MonoBehaviour {
 		width = collider.size.x;
 		//localPosition = transform.position;
 		lerpDelay = 2f / Network.sendRate; //with tick rate 25, and delay of 2 frames, we have .08s delay
-
 	}
 	
 	void FixedUpdate()
@@ -156,7 +163,7 @@ public class Player : MonoBehaviour {
 		else{
 			//Process 1 event
 			if(eventQueue.Count != 0){
-				if(eventQueue.Peek().timestamp <= simTime){
+				if(DEBUG || eventQueue.Peek().timestamp <= simTime){
 					Event doNow = eventQueue.Dequeue();
 					if(doNow.functionName == "Shoot")
 						ShootLocal ((int)doNow.parameters[0], (Vector3)doNow.parameters[1], ((float)Network.time - doNow.timestamp));
@@ -165,6 +172,7 @@ public class Player : MonoBehaviour {
 		}
 	}
 
+	float interval = float.PositiveInfinity;
 	// Update is called once per frame
 	void Update ()
 	{
@@ -173,55 +181,56 @@ public class Player : MonoBehaviour {
 				jump = true;
 			}
 			if(canShoot && Input.GetKeyDown(KeyCode.Q)){
-				networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight), mouth.position);
-				//Mode 1, shoot instantly
-				ShootLocal(Convert.ToInt32(facingRight), mouth.position, 0f);
-
+				if(Network.isServer){
+					networkView.RPC("Shoot", RPCMode.Others, Convert.ToInt32(facingRight), mouth.position, (float)Network.time);
+				}
+				else{
+					networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight), mouth.position);
+				}
+					ShootLocal(Convert.ToInt32(facingRight), mouth.position, 0f);
 			}
 		}
 		else{
 
 			if(canStart){
 				simTime = (float)Network.time - lerpDelay; // this might be risky if we skip a frame
-
-				//read the two oldest states.
-				State oldState = states.ReadOldest();
-				
-				State newState = states.ReadAt(1);
-
-				float interval = newState.localTime - oldState.localTime;
+				//Debug.Log(interval);
 				currentSmooth += Time.deltaTime;
-
-				if(newState.facingRight != facingRight)
-					Turn();
-				//Vector3 positionDifference = serverPosition - localPosition;
-				Vector3 positionDifference = newState.position - oldState.position;
-				float distanceApart = positionDifference.magnitude;
-				if(distanceApart > width * 5.0f){
-					transform.position = newState.position;
-					oldState.position = newState.position;
-				}
-				else
-					transform.position = Vector3.Lerp(oldState.position, newState.position,
-						currentSmooth/(interval));
 				//under review:
 				//assume we lost a packet, move to newer state
 				if(currentSmooth >= interval){
 					if(states.Count > 2){
 						//Debug.Log("moving on");
 						states.DiscardOldest();
-						currentSmooth = 0f;
+						//if we were perfectly in sync, we could reset to 0, but instead set it to the amount
+						//we overshot
+						currentSmooth = currentSmooth - interval; 
 					}
-					else
-						Debug.Log ("Not enough buffer");
+					//else
+					//	Debug.Log ("Not enough buffer");
 				}
+				//read the two oldest states.
+				State oldState = states.ReadOldest(); //TODO add code for packet loss
+				State newState = states.ReadAt(1);
 
+				interval = newState.remoteTime - oldState.remoteTime;
 
+				if(newState.facingRight != facingRight)
+					Turn();
+				//Vector3 positionDifference = serverPosition - localPosition;
+				Vector3 positionDifference = newState.position - oldState.position;
+				float distanceApart = positionDifference.magnitude;
+				if(distanceApart > width * 20.0f){
+					transform.position = newState.position;
+					oldState.position = newState.position;
+				}
+				else
+					transform.position = Vector3.Lerp(oldState.position, newState.position,
+						currentSmooth/(interval));
 			}
 		}
 	}
-
-	bool modifyLerpTime = false;
+	
 	void OnSerializeNetworkView(BitStream stream, NetworkMessageInfo info)
 	{
 		Vector3 syncPosition = Vector3.zero;
@@ -240,10 +249,9 @@ public class Player : MonoBehaviour {
 			if(states.Count >= 3){
 				canStart = true;
 				double newestTime = states.ReadNewest().remoteTime;
-				if(info.timestamp > newestTime + 1f/Network.sendRate * 1.5f){
+				if(info.timestamp >= newestTime + 1f/Network.sendRate * 2.0f){
 					Debug.Log("lost previous packet");
 					Debug.Log("local" + newestTime + "server" + info.timestamp);
-					modifyLerpTime = true;
 				}
 				else if(info.timestamp < newestTime) {
 					Debug.Log("out of order packet");
@@ -254,8 +262,8 @@ public class Player : MonoBehaviour {
 					return;
 				}
 			}
-
-			currentSmooth = 0f; //reset period of interpolation, since we got new packet
+			//if(states.Count == 3)
+				//currentSmooth = 0f; //reset period of interpolation, since we got new packet
 
 			stream.Serialize(ref syncPosition);
 			stream.Serialize(ref syncFacing);
@@ -263,23 +271,19 @@ public class Player : MonoBehaviour {
 			state.remoteTime = (float)info.timestamp;
 			state.localTime = (float)Network.time;
 			states.Add(state); //if we advanced buffer manually, then count < maxsize
-
-			lastSynctime = Time.time;
-			/* if(syncFacing != facingRight)
-				Turn(); */
 		}
 	}
 
 	void ApplyDamage(){
 
 	}
-	void OnCollisionEnter2D(Collision2D collision){
-		if(collision.gameObject.tag  == "Bullet"){
-			Projectile info = collision.gameObject.GetComponent<Projectile>();
+	void OnTriggerEnter2D(Collider2D other){
+		if(other.gameObject.tag  == "Bullet"){
+			Projectile info = other.gameObject.GetComponent<Projectile>();
 			if(theOwner == info.theOwner)
 				return;
 
-			Destroy(collision.gameObject);
+			Destroy(other.gameObject);
 			SpriteRenderer myRenderer = gameObject.GetComponent<SpriteRenderer>();
 			//iTween.ColorTo(myRenderer.gameObject, iTween.Hash("r", 200.0f, "time", 1.0f, "looptype", "pingpong"));
 			myRenderer.color = ColorHSV.GetRandomColor(UnityEngine.Random.Range(0.0f, 360f), 1f, 1f);
