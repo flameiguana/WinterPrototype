@@ -194,23 +194,26 @@ public class Player : MonoBehaviour {
 			}
 		}
 		else{
-
 			if(canStart){
-
 				//Debug.Log(interval);
 				currentSmooth += Time.deltaTime;
 				//under review:
 				//assume we lost a packet, move to newer state
 				if(currentSmooth >= interval){
 					if(states.Count > 2){
-						//Debug.Log("moving on");
 						states.DiscardOldest();
 						//if we were perfectly in sync, we could reset to 0, but instead set it to the amount
 						//we overshot
 						currentSmooth = currentSmooth - interval; 
 					}
-					//else
-					//	Debug.Log ("Not enough buffer");
+					else {
+						Debug.Log("missed too many packets");
+						currentSmooth = 0f;
+						interval = float.PositiveInfinity;
+						canStart = false;
+						//don't interpolate but let gravity do its job so that players dont freeze in air
+						rigidbody2D.isKinematic = false;
+					}
 				}
 				//read the two oldest states.
 				State oldState = states.ReadOldest(); //TODO add code for packet loss
@@ -250,8 +253,7 @@ public class Player : MonoBehaviour {
 		{
 			//reject out of order/duplicate packets
 			//not sure if this can verify that a packet was lost yet;
-			if(canStart || states.Count >= 3){
-				canStart = true;
+			if(states.Count >= 2){
 				double newestTime = states.ReadNewest().remoteTime;
 				if(info.timestamp >= newestTime + 1f/Network.sendRate * 2.0f){
 					Debug.Log("lost previous packet");
@@ -266,8 +268,10 @@ public class Player : MonoBehaviour {
 					return;
 				}
 			}
-			//if(states.Count == 3)
-				//currentSmooth = 0f; //reset period of interpolation, since we got new packet
+			if(canStart == false && states.Count >= 3){
+				rigidbody2D.isKinematic = true;
+				canStart = true;
+			}
 
 			stream.Serialize(ref syncPosition);
 			stream.Serialize(ref syncFacing);
