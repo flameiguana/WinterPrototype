@@ -32,7 +32,6 @@ public class Player : MonoBehaviour {
 	/* Synchronization Variables */                                                                                                                                                                                                                                      
 	private float currentSmooth =0f;
 	private bool canStart= false;
-	float lerpDelay;
 	float simTime;
 	
 	struct State{
@@ -88,7 +87,7 @@ public class Player : MonoBehaviour {
 		if(isOwner)
 			return; //reject the message because you already did it
 
-		if(originalTime > simTime){
+		if(info.timestamp > simTime){
 			//TODO: store lag ino order to push projectile forwards to sync with player who launched
 			//Debug.Log("Storing Event");
 			Event doLater = new Event();
@@ -101,7 +100,7 @@ public class Player : MonoBehaviour {
 			return;
 		}
 		else
-			Debug.Log ("Too late");
+			Debug.Log ("Too late. Local: " + simTime + " Remote: " + info.timestamp);
 	}
 
 	void ShootLocal(int facingRight, Vector3 mouthPosition, float lag){
@@ -111,6 +110,7 @@ public class Player : MonoBehaviour {
 			flip = -1f;
 		//teleport. In teh real game we would just speed up rocket
 		float distanceApart  = lag * SHOOT_VELOCITY;
+		Debug.Log("lag: " + lag); 
 		mouthPosition.x = mouthPosition.x + flip * (distanceApart * 2f);
 		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouthPosition, Quaternion.identity);
 		Projectile script = projectile.GetComponent<Projectile>();
@@ -139,7 +139,7 @@ public class Player : MonoBehaviour {
 		BoxCollider2D collider = gameObject.GetComponent<BoxCollider2D>();
 		width = collider.size.x;
 		//localPosition = transform.position;
-		lerpDelay = 2f / Network.sendRate; //with tick rate 25, and delay of 2 frames, we have .08s delay
+		//lerpDelay = 2f / Network.sendRate; //with tick rate 25, and delay of 2 frames, we have .08s delay
 	}
 	
 	void FixedUpdate()
@@ -165,6 +165,7 @@ public class Player : MonoBehaviour {
 			if(eventQueue.Count != 0){
 				if(DEBUG || eventQueue.Peek().timestamp <= simTime){
 					Event doNow = eventQueue.Dequeue();
+					Debug.Log ("Local: " + Network.time + " Remote: " + doNow.timestamp);
 					if(doNow.functionName == "Shoot")
 						ShootLocal ((int)doNow.parameters[0], (Vector3)doNow.parameters[1], ((float)Network.time - doNow.timestamp));
 				}
@@ -193,7 +194,7 @@ public class Player : MonoBehaviour {
 		else{
 
 			if(canStart){
-				simTime = (float)Network.time - lerpDelay; // this might be risky if we skip a frame
+
 				//Debug.Log(interval);
 				currentSmooth += Time.deltaTime;
 				//under review:
@@ -227,6 +228,7 @@ public class Player : MonoBehaviour {
 				else
 					transform.position = Vector3.Lerp(oldState.position, newState.position,
 						currentSmooth/(interval));
+				simTime = oldState.remoteTime +  currentSmooth; // this might be risky if we skip a frame
 			}
 		}
 	}
@@ -246,7 +248,7 @@ public class Player : MonoBehaviour {
 		{
 			//reject out of order/duplicate packets
 			//not sure if this can verify that a packet was lost yet;
-			if(states.Count >= 3){
+			if(canStart || states.Count >= 3){
 				canStart = true;
 				double newestTime = states.ReadNewest().remoteTime;
 				if(info.timestamp >= newestTime + 1f/Network.sendRate * 2.0f){
