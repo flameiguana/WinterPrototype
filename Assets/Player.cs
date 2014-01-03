@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System;
+using System.Linq;
 
 //TODO:
 //1. Sync positions to server and then to clients (this relieves most players except host)
@@ -11,15 +12,17 @@ using System;
 public class Player : MonoBehaviour {
 
 	public bool DEBUG;
+	public ManageInstances instances;
 
 	public Rigidbody2D pellet;
 	NetworkPlayer theOwner;
+	public int playerNumber;
 	bool isOwner = false;
 	/* Movement variables */
 	bool onGround = false;
 	bool jump = false;
 	bool facingRight = true;
-	bool canShoot = true;
+	//bool canShoot = true;
 
 	float width;
 	const float groundRadius = 0.2f;
@@ -47,7 +50,7 @@ public class Player : MonoBehaviour {
 		}
 	}
 
-	private Queue<Event> eventQueue;
+	private SortedList<float, Event> eventQueue;
 	public class Event{
 		public string functionName;
 		public float timestamp;
@@ -89,16 +92,17 @@ public class Player : MonoBehaviour {
 			return; //reject the message because you already did it
 		float originalTime = (float)info.timestamp - requestDelta;
 		if(originalTime > simTime){
-			//TODO: store lag ino order to push projectile forwards to sync with player who launched
-			//Debug.Log("Storing Event");
+			/*
+			 * Sacrifice realness for less lag and jsut shoot instantly
 			Event doLater = new Event();
 			doLater.functionName = "Shoot";
 			doLater.timestamp = originalTime;
 			doLater.parameters.Add(facingRight);
 			doLater.parameters.Add(mouthPosition);
 			//doLater.parameters.Add(info);
-			eventQueue.Enqueue(doLater);
-			return;
+			eventQueue.Add(doLater.timestamp, doLater);
+			*/
+			ShootLocal (facingRight, mouthPosition, (float)Network.time - originalTime);
 		}
 		else
 			Debug.Log ("Too late. Local: " + simTime + " Remote: " + originalTime);
@@ -115,12 +119,36 @@ public class Player : MonoBehaviour {
 		//Debug.Log("lag: " + lag); 
 		mouthPosition.x = mouthPosition.x + flip * (distanceApart * 2f);
 		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouthPosition, Quaternion.identity);
+		instances.projectiles[playerNumber] =  projectile.gameObject;
 		Projectile script = projectile.GetComponent<Projectile>();
 		script.theOwner = theOwner;
 		//try doing a constant velocity for better look/to make this relevant to grappling hook
-
 		projectile.velocity = (new Vector2(SHOOT_VELOCITY*flip, 0f));
 	}
+
+
+	[RPC]
+	void NotifyHit(float r, float g, float b, int projectileID, NetworkMessageInfo info){
+
+		Color color = new Color(r, g, b);
+		Event doLater = new Event();
+		doLater.functionName = "Hit";
+		doLater.timestamp = (float)info.timestamp;
+		doLater.parameters.Add (color);
+		doLater.parameters.Add (projectileID);
+		eventQueue.Add(doLater.timestamp, doLater);
+		if(doLater.timestamp > simTime)
+			Debug.Log ("I'm dumber");
+		//Hit (color, projectileID);
+	}
+
+	void Hit(Color color, int projectileID){
+		SpriteRenderer myRenderer = gameObject.GetComponent<SpriteRenderer>();
+		myRenderer.color = color;
+		Destroy (instances.projectiles[projectileID]);
+		instances.projectiles[projectileID] = null;
+	}
+
 
 	void Turn(){
 		facingRight = !facingRight;
@@ -133,11 +161,12 @@ public class Player : MonoBehaviour {
 	{
 		rigidbody2D.isKinematic = true;
 		states = new CircularBuffer<State>(4);
-		eventQueue = new Queue<Event>();
+		eventQueue = new SortedList<float, Event>();
 	}
 	// Use this for initialization
 	void Start ()
 	{
+		instances = GameObject.Find ("InstanceManager").GetComponent<ManageInstances>(); //meh
 		BoxCollider2D collider = gameObject.GetComponent<BoxCollider2D>();
 		width = collider.size.x;
 		//localPosition = transform.position;
@@ -162,17 +191,21 @@ public class Player : MonoBehaviour {
 				jump = false;
 			}
 		}
-		else{
-			//Process 1 event
-			if(eventQueue.Count != 0){
-				if(DEBUG || eventQueue.Peek().timestamp <= simTime){
-					Event doNow = eventQueue.Dequeue();
-					//Debug.Log ("Local: " + Network.time + " Remote: " + doNow.timestamp);
-					if(doNow.functionName == "Shoot")
-						ShootLocal ((int)doNow.parameters[0], (Vector3)doNow.parameters[1], ((float)Network.time - doNow.timestamp));
-				}
+
+		//Process 1 event. You don't have to be the owner
+		if(eventQueue.Count != 0){
+			float relativeTime = isOwner ? (float)Network.time : simTime;
+			if(eventQueue.Keys[0] <= relativeTime){
+				Event doNow = eventQueue.Values[0];
+				eventQueue.RemoveAt(0);
+				//Debug.Log ("Local: " + Network.time + " Remote: " + doNow.timestamp);
+				if(doNow.functionName == "Shoot")
+					ShootLocal ((int)doNow.parameters[0], (Vector3)doNow.parameters[1], ((float)Network.time - doNow.timestamp));
+				if(doNow.functionName == "Hit")
+					Hit ((Color)doNow.parameters[0], (int)doNow.parameters[1]);
 			}
 		}
+
 	}
 
 	float interval = float.PositiveInfinity;
@@ -183,7 +216,8 @@ public class Player : MonoBehaviour {
 			if(onGround && Input.GetKeyDown(KeyCode.Space)){
 				jump = true;
 			}
-			if(canShoot && Input.GetKeyDown(KeyCode.Q)){
+			if(instances.projectiles[playerNumber] == null && Input.GetKeyDown(KeyCode.Q)){
+
 				if(Network.isServer){
 					networkView.RPC("Shoot", RPCMode.Others, Convert.ToInt32(facingRight), mouth.position, 0f); //0 network delay
 				}
@@ -216,8 +250,8 @@ public class Player : MonoBehaviour {
 					}
 				}
 				//read the two oldest states.
-				State oldState = states.ReadOldest(); //TODO add code for packet loss
-				State newState = states.ReadAt(1);
+				State oldState = states.ReadOldest(); 
+				State newState = states.GetByIndex(1);
 
 				interval = newState.remoteTime - oldState.remoteTime;
 
@@ -282,19 +316,22 @@ public class Player : MonoBehaviour {
 		}
 	}
 
-	void ApplyDamage(){
 
-	}
 	void OnTriggerEnter2D(Collider2D other){
 		if(other.gameObject.tag  == "Bullet"){
 			Projectile info = other.gameObject.GetComponent<Projectile>();
+
 			if(theOwner == info.theOwner)
 				return;
 
-			Destroy(other.gameObject);
-			SpriteRenderer myRenderer = gameObject.GetComponent<SpriteRenderer>();
-			//iTween.ColorTo(myRenderer.gameObject, iTween.Hash("r", 200.0f, "time", 1.0f, "looptype", "pingpong"));
-			myRenderer.color = ColorHSV.GetRandomColor(UnityEngine.Random.Range(0.0f, 360f), 1f, 1f);
+			//if you're the owner
+			if(Network.isServer){
+				Color color = ColorHSV.GetRandomColor(UnityEngine.Random.Range(0.0f, 360f), 1f, 1f);
+				int projectileID = instances.projectiles.IndexOf(info.gameObject);
+				networkView.RPC("NotifyHit", RPCMode.Others, color.r, color.g, color.b, projectileID);
+				Hit(color, projectileID);
+				//iTween.ColorTo(myRenderer.gameObject, iTween.Hash("r", 200.0f, "time", 1.0f, "looptype", "pingpong"));
+			}
 		}
 	}
 }

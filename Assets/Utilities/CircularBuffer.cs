@@ -51,7 +51,7 @@ public class CircularBuffer<T> : IEnumerable<T>
 		return buffer[Tail];
 	}
 
-	public T ReadAt(int distance){
+	public T GetByIndex(int distance){
 		return buffer[(Head + distance) % buffer.Length];
 	}
 	//advances head

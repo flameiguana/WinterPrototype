@@ -138,7 +138,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   DEBUG: 1
+  instances: {fileID: 0}
   pellet: {fileID: 5000000, guid: 025dd373c2e9c564cb253de7ddb474a0, type: 2}
+  playerNumber: 0
   groundCheck: {fileID: 400002}
   mouth: {fileID: 400004}
   ground:
