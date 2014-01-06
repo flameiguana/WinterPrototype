@@ -4,11 +4,9 @@ using System.Collections.Generic;
 using System;
 using System.Linq;
 
-//TODO:
+//Under Consideration:
 //1. Sync positions to server and then to clients (this relieves most players except host)
-//2. Confirm hit on server (majority vote?, trust 1 client?)
-//enhance the realism of attacks at the expense of the realism of taking damage. However, this does not
-//apply to rockets or melee
+
 public class Player : MonoBehaviour {
 
 	public bool DEBUG;
@@ -34,14 +32,18 @@ public class Player : MonoBehaviour {
 
 	/* Synchronization Variables */                                                                                                                                                                                                                                      
 	private float currentSmooth =0f;
-	private bool canStart= false;
+	private bool canInterpolate= false;
 	float simTime;
-	
+
+
+	/*
+	 * Holds various properties required to simulate the state of a player locally.
+	 */
 	struct State{
 		public Vector3 position;
 		public bool facingRight;
-		public float remoteTime;
-		public float localTime;
+		public float remoteTime; //the time of this state on the client
+		public float localTime;  //the time we received a copy of this state.
 		public State(Vector3 position, bool facingRight){
 			this.position = position;
 			this.facingRight = facingRight;
@@ -50,7 +52,10 @@ public class Player : MonoBehaviour {
 		}
 	}
 
-	private SortedList<float, Event> eventQueue;
+	/*
+	 * Stores parameters and a function name so that it can be called at a later time.
+	 * Parameters can be of any type, so casting will be needed.
+	 */
 	public class Event{
 		public string functionName;
 		public float timestamp;
@@ -59,33 +64,59 @@ public class Player : MonoBehaviour {
 			parameters = new ArrayList();
 		}
 	}
+	//A priority queue of events sorted by earliest time to highest.
+	private SortedList<float, Event> eventQueue;
 
+	//A buffer of states. Not sure if a circular buffer is the best data structure at this point.
 	CircularBuffer<State> states;
 
+
+	//Sets the network ID to this instantiation of the player.
 	[RPC]
 	void SetPlayerID(NetworkPlayer player)
 	{
 		theOwner = player;
 		if(player == Network.player){ 
-			isOwner = true;
+			isOwner = true; //we can control the player locally
 			rigidbody2D.isKinematic = false;
 		}
 	}
 
-	//To server
-	[RPC]
-	void ShootRequest(int facingRight, Vector3 mouthPosition, NetworkMessageInfo info)
+	void Awake()
 	{
-		float requestDelta =  (float)(Network.time - info.timestamp); 	//This variable stores the delay from sender to here.
-		//shoot from where the player currently is (this might still be buggy because position on server is interpolated)
+		//Since most motion is directed by interpolation, don't allow local forces to move this player.
+		rigidbody2D.isKinematic = true;
+
+		states = new CircularBuffer<State>(4);
+		eventQueue = new SortedList<float, Event>();
+	}
+
+	// Use this for initialization
+	void Start ()
+	{
+		//get references for existing objects
+		instances = GameObject.Find ("InstanceManager").GetComponent<ManageInstances>(); //meh
+		BoxCollider2D collider = gameObject.GetComponent<BoxCollider2D>();
+		width = collider.size.x;
+		//lerpDelay = 2f / Network.sendRate; //with tick rate 25, and delay of 2 frames, we have .08s delay
+	}
+
+
+	[RPC]
+	void ShootNotify(int facingRight, Vector3 mouthPosition, NetworkMessageInfo info)
+	{
+		//This variable stores the delay from sender to here.
+		float requestDelta =  (float)(Network.time - info.timestamp); 	
+		//shoot from where the player currently is (this may not look right because position on server is interpolated)
 		networkView.RPC("Shoot", RPCMode.Others, facingRight, mouthPosition, requestDelta);
-		//We know that only the server reads this function, so we can call the following without checking
-		//if we're on the server
-		//since times in info and original time are the same, lag will be less than on client b
+
+		/*We know that only the server calls shootRequest, so we can call the following without
+		 * checking if we're on the server. Since times in info and original time are the same, lag
+		 * will be less than on client b*/
 		Shoot (facingRight, mouthPosition,requestDelta, info);
 	}
 	
-	//To players (and host client)
+	//The server tells the clients to call this function, which eventually calls ShootLocal
 	[RPC]
 	void Shoot(int facingRight, Vector3 mouthPosition, float requestDelta,  NetworkMessageInfo info){
 		if(isOwner)
@@ -93,7 +124,7 @@ public class Player : MonoBehaviour {
 		float originalTime = (float)info.timestamp - requestDelta;
 		if(originalTime > simTime){
 			/*
-			 * Sacrifice realness for less lag and jsut shoot instantly
+			 * Sacrifice realness for less lag and just shoot instantly
 			Event doLater = new Event();
 			doLater.functionName = "Shoot";
 			doLater.timestamp = originalTime;
@@ -108,28 +139,26 @@ public class Player : MonoBehaviour {
 			Debug.Log ("Too late. Local: " + simTime + " Remote: " + originalTime);
 	}
 
-	//The function that actually spawns the rocket.
+	//The function that actually spawns the projectile.
 	void ShootLocal(int facingRight, Vector3 mouthPosition, float lag){
-
 		float flip = 1f;
 		if(facingRight != 1)
 			flip = -1f;
-		//teleport. In teh real game we would just speed up rocket
+		//Teleport a certain distance apart depending on lag.
+		//In the real game we would just speed up rocket and/or reduce the animation duration for shooting.
 		float distanceApart  = lag * SHOOT_VELOCITY;
-		//Debug.Log("lag: " + lag); 
 		mouthPosition.x = mouthPosition.x + flip * (distanceApart * 2f);
 		Rigidbody2D projectile = (Rigidbody2D)Instantiate (pellet, mouthPosition, Quaternion.identity);
 		instances.projectiles[playerNumber] =  projectile.gameObject;
 		Projectile script = projectile.GetComponent<Projectile>();
 		script.theOwner = theOwner;
-		//try doing a constant velocity for better look/to make this relevant to grappling hook
 		projectile.velocity = (new Vector2(SHOOT_VELOCITY*flip, 0f));
 	}
 
 
+	//This function is sent to everyone but the server and tells them to store a hit event.
 	[RPC]
 	void NotifyHit(float r, float g, float b, int projectileID, NetworkMessageInfo info){
-
 		Color color = new Color(r, g, b);
 		Event doLater = new Event();
 		doLater.functionName = "Hit";
@@ -142,9 +171,11 @@ public class Player : MonoBehaviour {
 		//Hit (color, projectileID);
 	}
 
+	//Change color to match that on the server. This could be extended to do a variety of things.
 	void Hit(Color color, int projectileID){
 		SpriteRenderer myRenderer = gameObject.GetComponent<SpriteRenderer>();
 		myRenderer.color = color;
+		//Destroys the bullet, identified by the ID.
 		Destroy (instances.projectiles[projectileID]);
 		instances.projectiles[projectileID] = null;
 	}
@@ -157,25 +188,10 @@ public class Player : MonoBehaviour {
 		transform.localScale = localScale;
 	}
 
-	void Awake()
-	{
-		rigidbody2D.isKinematic = true;
-		states = new CircularBuffer<State>(4);
-		eventQueue = new SortedList<float, Event>();
-	}
-	// Use this for initialization
-	void Start ()
-	{
-		instances = GameObject.Find ("InstanceManager").GetComponent<ManageInstances>(); //meh
-		BoxCollider2D collider = gameObject.GetComponent<BoxCollider2D>();
-		width = collider.size.x;
-		//localPosition = transform.position;
-		//lerpDelay = 2f / Network.sendRate; //with tick rate 25, and delay of 2 frames, we have .08s delay
-	}
-	
 	void FixedUpdate()
 	{
 		if (isOwner){
+			//If you're the owner you can jump and move and stuff.
 			onGround = Physics2D.OverlapCircle(groundCheck.position , groundRadius);
 			float up = jump ? 1.0f : 0.0f;
 			Vector3 axes = new Vector3(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"), up);
@@ -194,6 +210,7 @@ public class Player : MonoBehaviour {
 
 		//Process 1 event. You don't have to be the owner
 		if(eventQueue.Count != 0){
+			//If this instance is being simulated, use simTime, otherwise use real time.
 			float relativeTime = isOwner ? (float)Network.time : simTime;
 			if(eventQueue.Keys[0] <= relativeTime){
 				Event doNow = eventQueue.Values[0];
@@ -209,42 +226,44 @@ public class Player : MonoBehaviour {
 	}
 
 	float interval = float.PositiveInfinity;
-	// Update is called once per frame
+	//Update is called once per frame
 	void Update ()
 	{
 		if(isOwner){
+			//A jump command is only detected once per frame.
 			if(onGround && Input.GetKeyDown(KeyCode.Space)){
 				jump = true;
 			}
+			//If you press the key and there isn't already a projectile then you can shoot
 			if(instances.projectiles[playerNumber] == null && Input.GetKeyDown(KeyCode.Q)){
-
 				if(Network.isServer){
 					networkView.RPC("Shoot", RPCMode.Others, Convert.ToInt32(facingRight), mouth.position, 0f); //0 network delay
 				}
 				else{
-					networkView.RPC("ShootRequest", RPCMode.Server, Convert.ToInt32(facingRight), mouth.position);
+					networkView.RPC("ShootNotify", RPCMode.Server, Convert.ToInt32(facingRight), mouth.position);
 				}
+					//IMPORTANT: For now, we are spawning a projectile for clients and server.
+					//Depending on testing, we may want to ask for permission for shooting from the server.
 					ShootLocal(Convert.ToInt32(facingRight), mouth.position, 0f);
 			}
 		}
 		else{
-			if(canStart){
-				//Debug.Log(interval);
+			//check if we have enough states to interpolate between.
+			if(canInterpolate){
 				currentSmooth += Time.deltaTime;
-				//under review:
-				//assume we lost a packet, move to newer state
+
+				//if we go past these two states, move to next one.
 				if(currentSmooth >= interval){
 					if(states.Count > 2){
 						states.DiscardOldest();
-						//if we were perfectly in sync, we could reset to 0, but instead set it to the amount
-						//we overshot
+						//if we were perfectly in sync, we could reset to 0, but instead set it to the amount we overshot
 						currentSmooth = currentSmooth - interval; 
 					}
 					else {
-						Debug.Log("missed too many packets");
+						Debug.Log("Missed too many packets. We need 2 states to interpolate between.");
 						currentSmooth = 0f;
 						interval = float.PositiveInfinity;
-						canStart = false;
+						canInterpolate = false;
 						//don't interpolate but let gravity do its job so that players dont freeze in air
 						rigidbody2D.isKinematic = false;
 					}
@@ -253,21 +272,24 @@ public class Player : MonoBehaviour {
 				State oldState = states.ReadOldest(); 
 				State newState = states.GetByIndex(1);
 
+				//tells us how long to interpolate between these two states.
 				interval = newState.remoteTime - oldState.remoteTime;
 
 				if(newState.facingRight != facingRight)
 					Turn();
-				//Vector3 positionDifference = serverPosition - localPosition;
+
 				Vector3 positionDifference = newState.position - oldState.position;
 				float distanceApart = positionDifference.magnitude;
 				if(distanceApart > width * 20.0f){
+					//snap to position if difference is too great.
 					transform.position = newState.position;
 					oldState.position = newState.position;
 				}
 				else
 					transform.position = Vector3.Lerp(oldState.position, newState.position,
 						currentSmooth/(interval));
-				simTime = oldState.remoteTime +  currentSmooth; // this might be risky if we skip a frame
+				//The local simulation time of this thing.
+				simTime = oldState.remoteTime +  currentSmooth;
 			}
 		}
 	}
@@ -276,8 +298,10 @@ public class Player : MonoBehaviour {
 	{
 		Vector3 syncPosition = Vector3.zero;
 		bool syncFacing = false;
+
 		if (stream.isWriting)
 		{
+			//if we have control over this entity, send out our positions to everyone else.
 			syncFacing = facingRight;
 			syncPosition = transform.position;
 			stream.Serialize(ref syncPosition);
@@ -302,9 +326,10 @@ public class Player : MonoBehaviour {
 					return;
 				}
 			}
-			if(canStart == false && states.Count >= 3){
+
+			if(canInterpolate == false && states.Count >= 3){
 				rigidbody2D.isKinematic = true;
-				canStart = true;
+				canInterpolate = true;
 			}
 
 			stream.Serialize(ref syncPosition);
@@ -316,21 +341,21 @@ public class Player : MonoBehaviour {
 		}
 	}
 
-
+	//Collision for triggers
 	void OnTriggerEnter2D(Collider2D other){
 		if(other.gameObject.tag  == "Bullet"){
 			Projectile info = other.gameObject.GetComponent<Projectile>();
 
+			//if its our own ignore it.
 			if(theOwner == info.theOwner)
 				return;
 
-			//if you're the owner
+			//If this collision happens on the server, acknowledge it and tell the clients.
 			if(Network.isServer){
 				Color color = ColorHSV.GetRandomColor(UnityEngine.Random.Range(0.0f, 360f), 1f, 1f);
 				int projectileID = instances.projectiles.IndexOf(info.gameObject);
 				networkView.RPC("NotifyHit", RPCMode.Others, color.r, color.g, color.b, projectileID);
 				Hit(color, projectileID);
-				//iTween.ColorTo(myRenderer.gameObject, iTween.Hash("r", 200.0f, "time", 1.0f, "looptype", "pingpong"));
 			}
 		}
 	}
